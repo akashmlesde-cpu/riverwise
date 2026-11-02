@@ -1,5 +1,7 @@
 # Riverwise — AI Poker Coach
 
+**▶ [Try it live in your browser](https://akashmlesde-cpu.github.io/riverwise/)**: no install, works offline.
+
 Play No-Limit Hold'em against AI opponents, get every decision graded by an expected-value (EV) engine, and ask a tutor **"why?"** in plain English. The tutor's answers are grounded in the engine's numbers, so it can't invent equities or odds.
 
 ![Riverwise: table, decision bar and tutor answering how an EV was calculated](docs/screenshot.png)
