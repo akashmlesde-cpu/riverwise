@@ -15,7 +15,7 @@
   const GRADES = [
     { key: 'excellent', label: 'Excellent', maxLoss: 0.2 },
     { key: 'good', label: 'Good', maxLoss: 0.8 },
-    { key: 'marginal', label: 'Reasonable / marginal', maxLoss: 2 },
+    { key: 'marginal', label: 'Inaccuracy', maxLoss: 2 },
     { key: 'mistake', label: 'Mistake', maxLoss: 4.5 },
     { key: 'blunder', label: 'Major mistake / blunder', maxLoss: Infinity }
   ];
@@ -355,6 +355,12 @@
     // Choosing a losing action when a non-losing one existed is never Good/Excellent.
     if (loss >= 0.05 && chosen.ev < 0 && ev.best.ev >= 0 && ['excellent', 'good'].includes(g.key))
       g = GRADES.find(x => x.key === 'marginal');
+    // Giving up 30%+ of the best option's value is an inaccuracy even when the BB amount is small.
+    if (loss >= 0.2 && ev.best.ev > 0 && chosen.ev < ev.best.ev * 0.7 && ['excellent', 'good'].includes(g.key))
+      g = GRADES.find(x => x.key === 'marginal');
+    // A size worse than the best size by more than the estimate's noise matches the "your size is the problem" text.
+    if (chosen.action === ev.best.action && rawLoss >= 0.15 + 0.04 * ev.pot && ['excellent', 'good'].includes(g.key))
+      g = GRADES.find(x => x.key === 'marginal');
     // A clearly profitable line keeping most of the best line's value is at worst a mistake.
     if (g.key === 'blunder' && chosen.ev > 0 && chosen.ev >= ev.best.ev * 0.5)
       g = GRADES.find(x => x.key === 'mistake');
@@ -553,5 +559,18 @@
     return { text: L.join('\n'), best: lowerFirst(actionText(ev.best)), bestAction: ev.best.action };
   }
 
-  PT.coach = { grade, tutorReply, tutorFacts, evaluateActions, buildVillainRanges, equityVsField, GRADES, clearCache: () => EVAL_CACHE.clear() };
+  // Which earlier decision a tutor question refers to (by an amount the student bet, or a street name), or -1.
+  function pickDecision(question, decisions, currentStreet) {
+    if (!question || !decisions || !decisions.length) return -1;
+    const q = question.toLowerCase().replace(/pre[\s-]?flop/g, 'preflop');
+    const amounts = [...q.matchAll(/(\d+(?:\.\d+)?)\s*(?:bb|big blinds?)?/g)].map(m => +m[1]);
+    for (let i = decisions.length - 1; i >= 0; i--)
+      if (decisions[i].amount != null && amounts.some(a => Math.abs(a - decisions[i].amount) < 0.05)) return i;
+    const street = ['preflop', 'river', 'turn', 'flop'].find(s => new RegExp(`\\b${s}\\b`).test(q));
+    if (!street || street === currentStreet) return -1;
+    for (let i = decisions.length - 1; i >= 0; i--) if (decisions[i].street === street) return i;
+    return -1;
+  }
+
+  PT.coach = { grade, tutorReply, tutorFacts, pickDecision, evaluateActions, buildVillainRanges, equityVsField, GRADES, clearCache: () => EVAL_CACHE.clear() };
 })(window.PT = window.PT || {});

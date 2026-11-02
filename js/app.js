@@ -228,7 +228,12 @@
       chosenAction: verdict.chosen.action,
       bestAction: verdict.best.action,
       chosenIsBest: verdict.best === verdict.chosen || verdict.best.ev - verdict.chosen.ev < 0.05,
-      ranking: `best action ${verdict.best.action} (EV ${verdict.best.ev.toFixed(1)} BB); student's action ${verdict.chosen.action} (EV ${verdict.chosen.ev.toFixed(1)} BB)`,
+      sizeOnly: verdict.chosen.action === verdict.best.action && verdict.best.amount != null && verdict.chosen.amount !== verdict.best.amount && verdict.best.ev - verdict.chosen.ev >= 0.05,
+      chosenAmount: verdict.chosen.amount,
+      bestAmount: verdict.best.amount,
+      ranking: verdict.chosen.action === verdict.best.action && verdict.best.amount != null && verdict.chosen.amount !== verdict.best.amount && verdict.best.ev - verdict.chosen.ev >= 0.05
+        ? `right action, worse size: the student's ${verdict.chosen.action} to ${verdict.chosen.amount.toFixed(1)} BB (EV ${verdict.chosen.ev.toFixed(1)} BB) is worse than ${verdict.best.action} to ${verdict.best.amount.toFixed(1)} BB (EV ${verdict.best.ev.toFixed(1)} BB). Say the action was right but the size was not, and why.`
+        : `best action ${verdict.best.action} (EV ${verdict.best.ev.toFixed(1)} BB); student's action ${verdict.chosen.action} (EV ${verdict.chosen.ev.toFixed(1)} BB)`,
       fallbackText: verdict.plain
     };
   }
@@ -240,7 +245,8 @@
     if (!box) return;
     box.classList.remove('pending', 'muted');
     if (text) { box.textContent = text; return; }
-    box.innerHTML = `${verdict.plain}<div class="muted">[engine text — AI note unavailable: ${String(problem).slice(0, 80).replace(/</g, '&lt;')}]</div>`;
+    console.info('AI coach note not used:', problem);
+    box.innerHTML = `${verdict.plain}<div class="muted">(built-in note)</div>`;
   }
 
   function onDone(data) {
@@ -538,24 +544,30 @@
   function decisionLine(v, view) {
     const board = view.board.map(c => c.id).join(' ');
     const isBest = v.best === v.chosen || v.best.ev - v.chosen.ev < 0.05;
-    return `${view.street}${board ? ` (board ${board})` : ''}, pot ${view.pot.toFixed(1)} BB: you chose ${actText(v.chosen)} (EV ${v.chosen.ev.toFixed(1)} BB), graded ${v.label}` +
-      (isBest ? ', the best option.' : `; best was ${actText(v.best)} (EV ${v.best.ev.toFixed(1)} BB).`);
+    const options = v.ev.actions.map(a => `${actText(a)} = ${a.ev.toFixed(1)}`).join(', ');
+    const line = `${view.street}${board ? ` (board ${board})` : ''}, pot ${view.pot.toFixed(1)} BB: you chose ${actText(v.chosen)} (EV ${v.chosen.ev.toFixed(1)} BB), graded ${v.label}` +
+      (isBest ? ', the best option.' : `; best was ${actText(v.best)} (EV ${v.best.ev.toFixed(1)} BB).`) + ` Options then (EV in BB): ${options}.`;
+    return { street: view.street, action: v.chosen.action, amount: v.chosen.amount, line };
   }
 
   function decisionHistory() {
     if (!handDecisions.length) return '';
     const hole = engine.players[heroId].hole.map(c => c.id).join(' ');
-    return `Your decisions this hand with ${hole}, graded when you made them:\n` + handDecisions.map((d, i) => `${i + 1}. ${d}`).join('\n');
+    return `Your decisions this hand with ${hole}, graded when you made them:\n` + handDecisions.map((d, i) => `${i + 1}. ${d.line}`).join('\n');
   }
 
   // After the hand: review its decisions. During it: earlier decisions plus the live spot.
-  function tutorContext(locked, history) {
+  function tutorContext(locked, history, q) {
+    const target = PT.coach.pickDecision(q, handDecisions, engine.over ? null : engine.street);
+    const focus = target < 0 ? '' : `The student is asking about decision ${target + 1} (${handDecisions[target].street}): answer about THAT decision using its line and options, not the current spot. Start by naming it, e.g. "Your ${handDecisions[target].street} ${handDecisions[target].action}…".\n`;
+    const mustMention = target < 0 ? null : [handDecisions[target].street, handDecisions[target].amount != null ? String(+handDecisions[target].amount.toFixed(1)) : null].filter(Boolean);
     if (engine.over) {
       const result = engine.history.filter(h => / (wins|shows) /.test(h.text)).map(h => youText(h.text)).join(' ');
-      return { text: `The hand is over. ${result}\nResults don't change grades; only the decisions do.\n${history || 'The student made no decisions this hand.'}`, best: null, bestAction: null };
+      return { text: `${focus}The hand is over. ${result}\nResults don't change grades; only the decisions do.\n${history || 'The student made no decisions this hand.'}`, best: null, bestAction: null, mustMention };
     }
     const facts = PT.coach.tutorFacts(engine.coachView(), heroId, locked);
-    if (history) facts.text = `${history}\n\nCurrent spot:\n${facts.text}`;
+    if (history) facts.text = `${focus}${history}\n\nCurrent spot (only if the question is about it):\n${facts.text}`;
+    if (target >= 0) { facts.best = null; facts.bestAction = null; facts.mustMention = mustMention; }
     return facts;
   }
 
@@ -571,9 +583,11 @@
     const locked = $('#coachMode').value === 'test' && engine.current === heroId && !engine.over;
     const history = decisionHistory();
     const localAnswer = () => {
+      const target = PT.coach.pickDecision(q, handDecisions, engine.over ? null : engine.street);
+      if (target >= 0) return `Your ${handDecisions[target].street} decision: ${handDecisions[target].line}`;
       if (engine.over) return history || 'You made no decisions this hand.';
       const reply = PT.coach.tutorReply(q, engine.coachView(), heroId, locked);
-      return history && /my play|pre.?flop|flop|turn|earlier|this hand|so far/i.test(q) ? `${history}\n\n${reply}` : reply;
+      return history && /my play|this hand|so far|earlier/i.test(q) ? `${history}\n\n${reply}` : reply;
     };
 
     if (PT.llm.enabled) {
@@ -581,7 +595,7 @@
       thinking.className = 'a muted';
       thinking.textContent = `${PT.llm.providerLabel} thinking…`;
       chat.appendChild(thinking);
-      PT.llm.tutorChat(q, tutorContext(locked, history), locked, chatHistory)
+      PT.llm.tutorChat(q, tutorContext(locked, history, q), locked, chatHistory)
         .then(txt => {
           thinking.remove();
           syncLlmStatus();

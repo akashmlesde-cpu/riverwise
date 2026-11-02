@@ -71,6 +71,23 @@ function mkEngine(villainArchetype) {
   check('nit raise range is value-heavy', bd.value > 0.5, JSON.stringify(bd));
 }
 
+// Right action, clearly worse size (Q9o opened to 7.5 BB instead of 3–4 BB) is graded Inaccuracy or worse.
+{
+  const seats = [{ name: 'You', archetype: 'tag', isHero: true }, ...[['Mara', 'tag'], ['Ben', 'station'], ['Sofia', 'nit'], ['Theo', 'lag'], ['Iris', 'adaptive']].map(([name, archetype]) => ({ name, archetype }))];
+  let ok = 0;
+  for (let i = 0; i < 5; i++) {
+    const e = new PT.HoldemEngine({ seats, stackBB: 100, sb: 0.5, bb: 1 });
+    ['log', 'hand', 'turn', 'street', 'done'].forEach(t => e.on(t, () => {}));
+    e.newHand();
+    e.players[0].hole = [card('9', '♥'), card('Q', '♠')];
+    e.act(3, 'fold'); e.act(4, 'fold'); e.act(5, 'fold');
+    PT.coach.clearCache();
+    const v = PT.coach.grade(e.coachView(), 0, 'raise', 7.5, 'Essential');
+    if (!['excellent', 'good'].includes(v.grade) && /size is the problem/.test(v.plain)) ok++;
+  }
+  check('oversized Q9o open (7.5 BB) is graded Inaccuracy+ with a sizing message, 5/5 runs', ok === 5, `${ok}/5`);
+}
+
 // A 4-bet vs an opener + 3-bettor must get realistic folds (the 3-bettor's range is already
 // narrow, so it was modelled as never folding: ~2% fold equity).
 {

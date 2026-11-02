@@ -359,7 +359,14 @@ Explain the verdict to the student:`;
     if (/excellent|good/.test(verdict) && (/\b(blunder|terrible|major mistake)\b/.test(t) ||
       /\b(was|is) (a |an )?(mistake|error|wrong|incorrect)\b/.test(t) && !/\b(not|n't|wasn't|isn't)\b[^.]*\b(mistake|error|wrong|incorrect)\b/.test(t))) return 'called a good play a mistake';
     if (/the nuts|second.best|third.best|second nuts|best possible hand/.test(t) && !/the nuts|second.best|best possible/.test((ctx.handRank || '').toLowerCase())) return 'unverified hand-rank claim';
-    if (ctx.chosenIsBest === false && ACTION_WORDS[ctx.chosenAction] && ACTION_WORDS[ctx.bestAction]) {
+    if (ctx.sizeOnly && ctx.chosenAmount != null) {
+      // Right action, worse size: praising the action is fine, praising the size is not.
+      const amt = String(+ctx.chosenAmount.toFixed(1)).replace('.', '\\.');
+      if (new RegExp(`\\b${amt}\\s*(bb)?\\b[^.,;]*\\b(is|was)\\s+(the\\s+)?(best|better|optimal|ideal|correct|right)\\b`).test(t) ||
+        new RegExp(`\\b(best|better|optimal|ideal|correct|right)\\s+(size|sizing|amount)\\s+(is|was)\\s+(to\\s+)?${amt}\\b`).test(t))
+        return 'called the worse size the better one';
+      if (!/\b(size|sizing|too (big|large|small)|smaller|bigger|larger)\b/.test(t)) return 'did not mention the sizing problem';
+    } else if (ctx.chosenIsBest === false && ACTION_WORDS[ctx.chosenAction] && ACTION_WORDS[ctx.bestAction]) {
       const chosen = ACTION_WORDS[ctx.chosenAction], best = ACTION_WORDS[ctx.bestAction];
       const praises = new RegExp(`${chosen}[^.]*\\b(better|more profitable|higher ev|the best|correct)\\b`).test(t);
       const hedged = new RegExp(`${chosen}[^.]*\\b(not|n't|worse|less|lower)\\b`).test(t);
@@ -413,6 +420,8 @@ Explain the verdict to the student:`;
   // Returns why an AI tutor answer can't be shown, or null if it's consistent with the engine.
   function tutorProblem(txt, facts, locked, question) {
     if (!txt) return 'empty answer';
+    if (facts.mustMention && !facts.mustMention.some(w => txt.toLowerCase().replace(/pre-flop/g, 'preflop').includes(String(w).toLowerCase())))
+      return `didn't address the ${facts.mustMention[0]} decision asked about`;
     for (const m of locked || facts.bestAction ? txt.matchAll(RECOMMEND) : []) {
       if (/\b(not|n't|never|instead of|if)\b/i.test(m[2])) continue;
       if (locked) return 'revealed the action in Test mode';

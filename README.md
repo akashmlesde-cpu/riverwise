@@ -72,7 +72,7 @@ To pre-set providers instead, copy `config.example.js` to `config.js` (git-ignor
 npm test
 ```
 
-114 checks across 7 suites in `tests/`, run headless in Node (no dependencies):
+123 checks across 7 suites in `tests/`, run headless in Node (no dependencies):
 
 | Suite | Covers |
 |---|---|

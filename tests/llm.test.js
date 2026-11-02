@@ -134,6 +134,22 @@ function spot() {
   check('tutor may do arithmetic on analysis numbers', PT.llm.validateTutor('Folds 40% of the time: 0.4 x 12.5 = 5.0 BB.', { text: 'pot 12.5 BB, folds 40%', bestAction: 'check', best: 'check' }, false, ''));
   check('tutor still rejects invented numbers', !PT.llm.validateTutor('Your equity is 73.4%.', { text: 'pot 2 BB, call 1 BB', bestAction: 'check', best: 'check' }, false, ''));
 
+  // Right action, worse size: the coach may praise the action but not the size
+  const sizeCtx = { spot: 'preflop', action: 'raise to 7.5 BB', verdict: 'Inaccuracy (EV loss 0.4 BB vs best line raise 3.0)', numbers: '', handRank: '', ranges: '',
+    evTable: 'raise 3.0=0.9BB; raise 7.5=0.5BB', ranking: '', chosenIsBest: false, chosenAction: 'raise', bestAction: 'raise', sizeOnly: true, chosenAmount: 7.5, bestAmount: 3 };
+  check('coach note: "raising was right but 7.5 BB is too big" is accepted', PT.llm.validateExplanation('Raising was the right action, but 7.5 BB is too big: a 3 BB raise earns 0.9 BB versus 0.5 BB.', sizeCtx));
+  check('coach note: calling the worse size the best is rejected', !PT.llm.validateExplanation('Raising to 7.5 BB was the best play here and earns 0.5 BB.', sizeCtx));
+  check('coach note: ignoring the size problem is rejected', !PT.llm.validateExplanation('Raising with Q9o is a good play from late position.', sizeCtx));
+
+  // Tutor routes questions to the decision they ask about
+  const decisions = [{ street: 'preflop', action: 'raise', amount: 7.5 }, { street: 'flop', action: 'bet', amount: 8 }];
+  check('question about "raising 7.5BB" picks the preflop decision', PT.coach.pickDecision('raising 7.5BB on Q off suit seems like a bad play', decisions, 'turn') === 0);
+  check('question about "the flop" picks the flop decision', PT.coach.pickDecision('what about my play on the flop?', decisions, 'turn') === 1);
+  check('question about now picks no past decision', PT.coach.pickDecision('should I bet now?', decisions, 'turn') === -1);
+  const routed = { text: 'facts 7.5 3 0.9 0.5 8 12 10 10.5', best: null, bestAction: null, mustMention: ['preflop', '7.5'] };
+  check('tutor answer about the wrong decision is rejected', !PT.llm.validateTutor('Betting to 12 BB has an EV of 10.5 BB, better than 8 BB.', routed, false, 'raising 7.5BB seems bad'));
+  check('tutor answer naming the asked decision is accepted', PT.llm.validateTutor('Your pre-flop raise to 7.5 BB was too big: 3 BB earns 0.9 BB versus 0.5 BB.', routed, false, 'raising 7.5BB seems bad'));
+
   // Coach note must not call a Good/Excellent decision a mistake
   const goodCtx = { spot: '', action: 'fold', verdict: 'Good (local engine)', numbers: '', handRank: '', ranges: '', evTable: '', ranking: '', chosenIsBest: false, chosenAction: 'fold', bestAction: 'raise' };
   check('coach note rejects "your fold was a mistake" on a Good card', !PT.llm.validateExplanation('Your fold was a mistake because raising is optimal.', goodCtx));
