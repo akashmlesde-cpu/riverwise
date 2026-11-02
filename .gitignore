@@ -1,0 +1,5 @@
+# Local settings and secrets (see config.example.js)
+config.js
+
+.DS_Store
+node_modules/

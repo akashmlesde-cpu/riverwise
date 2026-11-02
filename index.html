@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Riverwise — AI Poker Coach</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <strong>Riverwise</strong>
+    <span id="sessionInfo" class="muted">No session</span>
+    <button id="newSessionBtn">New session</button>
+    <select id="depth" title="Calculation depth">
+      <option>None</option><option selected>Essential</option>
+      <option>Advanced</option><option>Pro</option>
+    </select>
+    <select id="coachMode" title="Coach mode">
+      <option value="training">Training</option>
+      <option value="test">Test / Pro</option>
+    </select>
+    <select id="llmProvider" title="Which AI writes the analysis and answers the tutor"></select>
+    <select id="oppProvider" title="Which AI decides opponent actions (offline = built-in engine)"></select>
+    <button id="aiSettingsBtn" title="Connect any OpenAI-compatible AI, cloud or local">AI settings</button>
+    <span id="llmStatus" class="muted"></span>
+  </header>
+
+  <main>
+    <section id="tablePane">
+      <div id="felt">
+        <div id="potLine">Pot: <strong id="pot">0</strong> BB <span id="street" class="muted"></span></div>
+        <div id="board"></div>
+        <div id="seats"></div>
+      </div>
+
+      <div id="decisionBar" hidden>
+        <span id="decisionPrompt"></span>
+        <span class="btns" id="actionBtns"></span>
+        <span id="sizeCtl" hidden>
+          <span id="quickSizes"></span>
+          <input id="customSize" type="number" min="0" step="0.5" style="width:4.5em" /> BB
+          <button id="confirmSize">OK</button>
+        </span>
+      </div>
+
+      <div id="handLogWrap"><h3>Action</h3><div id="handLog"></div>
+        <button id="nextHandBtn" hidden>Next hand</button>
+      </div>
+    </section>
+
+    <aside>
+      <nav id="tabs">
+        <button data-tab="analysis" class="on">Analysis</button>
+        <button data-tab="tutor">Tutor</button>
+        <button data-tab="summary">Summary</button>
+        <button data-tab="math">Math</button>
+        <button data-tab="stats">Skills</button>
+        <button data-tab="hands">Hands</button>
+      </nav>
+
+      <div class="tab on" id="tab-analysis">
+        <div id="verdicts" class="muted">Verdicts appear here after each of your decisions. Graded only on information you had at decision time — never on results.</div>
+      </div>
+
+      <div class="tab" id="tab-tutor">
+        <div id="chat"></div>
+        <form id="chatForm">
+          <input id="chatInput" placeholder="Ask about this spot…" autocomplete="off" />
+          <button>Ask</button>
+        </form>
+      </div>
+
+      <div class="tab" id="tab-math">
+        <label class="guess-toggle"><input type="checkbox" id="guessMode" /> Guess-first mode</label>
+        <div id="mathPanel" class="muted">Math for the current decision appears here.</div>
+      </div>
+
+      <div class="tab" id="tab-summary">
+        <button id="copySummary">Copy summary</button>
+        <pre id="summaryText" class="muted">Start a session to see the live hand summary.</pre>
+      </div>
+
+      <div class="tab" id="tab-stats">
+        <div id="statsPanel"></div>
+        <button id="reportBtn">Session report</button>
+        <div id="reportOut"></div>
+      </div>
+
+      <div class="tab" id="tab-hands">
+        <button id="clearHands">Clear history</button>
+        <div id="handsList"></div>
+      </div>
+    </aside>
+  </main>
+
+  <dialog id="setupDialog">
+    <form method="dialog" id="setupForm">
+      <h2>New session</h2>
+      <label>Players
+        <select id="playerCount"><option>2</option><option>3</option><option>4</option><option>5</option><option selected>6</option><option>7</option><option>8</option><option>9</option></select>
+      </label>
+      <label>Stack (BB) <input id="stackBB" type="number" value="100" min="20" max="500" /></label>
+      <label>SB (BB) <input id="sbBB" type="number" value="0.5" min="0.1" step="0.25" /></label>
+      <label>BB (BB) <input id="bbBB" type="number" value="1" min="0.25" step="0.25" /></label>
+      <fieldset>
+        <legend>Opponents (per seat)</legend>
+        <div id="seatCfg"></div>
+      </fieldset>
+      <menu>
+        <button id="cancelBtn" type="button">Cancel</button>
+        <button id="startBtn" type="button">Start</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="replayDialog">
+    <h2>Hand replay</h2>
+    <div id="replayBody"></div>
+    <menu><button onclick="this.closest('dialog').close()">Close</button></menu>
+  </dialog>
+
+  <dialog id="aiDialog">
+    <form method="dialog" id="aiForm">
+      <h2>AI settings</h2>
+      <p class="muted">Works with any OpenAI-compatible API: cloud (Groq, OpenAI, OpenRouter, …) or a local server
+        (LM Studio, Ollama, llama.cpp, vLLM). Keys are stored only in this browser.</p>
+      <label class="wide">Provider <select id="aiProvider"></select></label>
+      <label class="wide">Base URL <input id="aiUrl" type="url" placeholder="https://…/v1" /></label>
+      <label class="wide">Model <input id="aiModel" type="text" autocomplete="off" /></label>
+      <label class="wide">API key <input id="aiKey" type="password" autocomplete="off" /></label>
+      <div class="ai-test"><button id="aiTestBtn" type="button">Save &amp; test connection</button> <span id="aiTestResult" class="muted"></span></div>
+      <menu>
+        <button id="aiCloseBtn" type="button">Close</button>
+        <button id="aiSaveBtn" type="button">Save</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <script src="config.js"></script>
+  <script src="js/deck.js"></script>
+  <script src="js/evaluator.js"></script>
+  <script src="js/pokermath.js"></script>
+  <script src="js/ranges.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/opponents.js"></script>
+  <script src="js/coach.js"></script>
+  <script src="js/spot.js"></script>
+  <script src="js/llm.js"></script>
+  <script src="js/calibration.js"></script>
+  <script src="js/stats.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "riverwise",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI poker coach for No-Limit Hold'em: play AI opponents, get every decision graded, ask a tutor why.",
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "test": "for t in tests/*.test.js; do node \"$t\" > /dev/null || { echo \"FAILED: $t\"; node \"$t\" | grep FAIL; exit 1; }; echo \"passed: $t\"; done"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
