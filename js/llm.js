@@ -83,6 +83,24 @@
     return p && { id, label: p.label, hint: p.hint, needsKey: p.needsKey, defaultUrl: p.url, url: s.url || p.url, model: s.model || '', key: s.key || '' };
   }
 
+  // Model ids the provider offers (OpenAI-compatible GET /models), using unsaved form values if given.
+  async function listModels(id, override = {}) {
+    const p = PRESETS[id];
+    if (!p) return [];
+    const s = settings.providers[id] || {};
+    const url = (override.url || s.url || p.url).trim().replace(/\/+$/, '').replace(/\/chat\/completions$/, '');
+    const key = (override.key !== undefined ? override.key : s.key || '').trim();
+    if (!url || (p.needsKey && !key)) return [];
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 8000);
+    try {
+      const res = await fetch(url + '/models', { signal: ctrl.signal, headers: key ? { Authorization: 'Bearer ' + key } : {} });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data.data || data.models || []).map(m => m.id || m.name).filter(Boolean).sort();
+    } catch { return []; } finally { clearTimeout(to); }
+  }
+
   // Sends a tiny request to check URL, model and key; resolves with the round-trip time.
   async function testProvider(id) {
     const c = conf(id);
@@ -365,13 +383,16 @@ Explain the verdict to the student:`;
   async function tutorChat(question, facts, locked, history) {
     const rule = locked
       ? 'The student has NOT acted yet (Test mode): explain concepts and math, but never say which action to take.'
-      : `Only name a best action if the student asks what to do; it must be "${facts.best}", never a different one.`;
-    const sys = 'You are a poker tutor sitting beside a student mid-hand in No-Limit Hold\'em. ' +
+      : !facts.bestAction ? 'The hand is over: review the student\'s graded decisions; do not recommend a new action.'
+      : `Only name a best action for the current spot if the student asks what to do; it must be "${facts.best}", never a different one.`;
+    const sys = 'You are a poker tutor sitting beside a student in No-Limit Hold\'em. ' +
       'Answer the student\'s exact question directly in the first sentence, then support it with numbers. ' +
+      'If they ask how they played, go through each graded decision this hand in order, using its grade and EVs. ' +
       'If they ask how a number was calculated, walk through its formula with the numbers given below. ' +
-      'If they ask about sizing, explain how the sizes compare. Do not repeat earlier answers; address what is new in this question. ' +
+      'If they ask about sizing, explain how the sizes compare. Higher EV is better: never call a lower EV higher. ' +
+      'Do not repeat earlier answers; address what is new in this question. ' +
       rule + ' You never see opponents\' hidden cards. Use only numbers from the analysis below (or simple arithmetic on them); ' +
-      'never invent equities, odds or EVs. 2-6 plain-English sentences.\n\nEngine analysis of the live spot:\n' + facts.text;
+      'never invent equities, odds or EVs. 2-6 plain-English sentences.\n\nEngine analysis:\n' + facts.text;
     const msgs = [{ role: 'system', content: sys }];
     for (const h of (history || []).slice(-6)) msgs.push({ role: h.role, content: h.text });
     msgs.push({ role: 'user', content: question });
@@ -392,7 +413,7 @@ Explain the verdict to the student:`;
   // Returns why an AI tutor answer can't be shown, or null if it's consistent with the engine.
   function tutorProblem(txt, facts, locked, question) {
     if (!txt) return 'empty answer';
-    for (const m of txt.matchAll(RECOMMEND)) {
+    for (const m of locked || facts.bestAction ? txt.matchAll(RECOMMEND) : []) {
       if (/\b(not|n't|never|instead of|if)\b/i.test(m[2])) continue;
       if (locked) return 'revealed the action in Test mode';
       if (ACTION_FAMILY[m[3].toLowerCase()] !== ACTION_FAMILY[facts.bestAction]) return `recommended ${m[3].toLowerCase()}, engine says ${facts.bestAction}`;
@@ -441,7 +462,7 @@ Explain the verdict to the student:`;
     get lastError() { return errors.coach || errors.opp; },
     get errors() { return { ...errors }; },
     get lastNoteProblem() { return lastNoteProblem; },
-    configure, providerSettings, testProvider, setProvider, setOppProvider,
+    configure, providerSettings, listModels, testProvider, setProvider, setOppProvider,
     decideForOpponent, explainDecision, tutorChat, validateExplanation, validateTutor
   };
 })(window.PT = window.PT || {});

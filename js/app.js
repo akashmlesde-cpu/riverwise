@@ -9,6 +9,7 @@
   let heroId = 0;
   let pendingSizeAction = null;   // 'bet' | 'raise' while size chooser open
   let lastVerdict = null;         // most recent verdict (tutor may discuss it)
+  let handDecisions = [];         // this hand's graded decisions, for the tutor's hand review
   let heroFlags = null;           // per-hand stat flags
   let guessMode = localStorage.getItem('riverwise.guessMode') === '1';
   let guessRevealed = false, lastGuess = null;
@@ -74,6 +75,7 @@
   function newHandFlags() {
     heroFlags = { voluntaryPreflop: null, raisedPreflop: false, faced3bet: false, pfa: false, facingBet: false, cbetOpportunity: false, cbetChecked: false };
     lastVerdict = null;
+    handDecisions = [];
     stats.hands++;
     stats.vpipD++; stats.pfrD++;
   }
@@ -185,6 +187,7 @@
     const verdict = PT.coach.grade(viewBefore, heroId, action, betTo, $('#depth').value);
     verdict._ev = verdict.ev;
     lastVerdict = verdict;
+    handDecisions.push(decisionLine(verdict, viewBefore));
     const aiNote = PT.llm.enabled && $('#depth').value !== 'None';
     stats.recordDecision(verdict, engine.handNo, viewBefore.street);
     showVerdict(verdict, viewBefore, aiNote);
@@ -244,6 +247,7 @@
     flushNote();
     renderAll();
     $('#decisionBar').hidden = true;
+    $('#sessionInfo').textContent = `Hand over · ${sessionLabel}`;
     if (data.showdown) {
       stats.showdowns++;
       if (data.winners.includes(heroId)) stats.showdownWins++;
@@ -529,6 +533,32 @@
 
   const chatHistory = [];
 
+  const actText = a => a.action + (a.amount == null ? '' : a.action === 'call' ? ` ${a.amount.toFixed(1)} BB` : ` to ${a.amount.toFixed(1)} BB`);
+
+  function decisionLine(v, view) {
+    const board = view.board.map(c => c.id).join(' ');
+    const isBest = v.best === v.chosen || v.best.ev - v.chosen.ev < 0.05;
+    return `${view.street}${board ? ` (board ${board})` : ''}, pot ${view.pot.toFixed(1)} BB: you chose ${actText(v.chosen)} (EV ${v.chosen.ev.toFixed(1)} BB), graded ${v.label}` +
+      (isBest ? ', the best option.' : `; best was ${actText(v.best)} (EV ${v.best.ev.toFixed(1)} BB).`);
+  }
+
+  function decisionHistory() {
+    if (!handDecisions.length) return '';
+    const hole = engine.players[heroId].hole.map(c => c.id).join(' ');
+    return `Your decisions this hand with ${hole}, graded when you made them:\n` + handDecisions.map((d, i) => `${i + 1}. ${d}`).join('\n');
+  }
+
+  // After the hand: review its decisions. During it: earlier decisions plus the live spot.
+  function tutorContext(locked, history) {
+    if (engine.over) {
+      const result = engine.history.filter(h => / (wins|shows) /.test(h.text)).map(h => youText(h.text)).join(' ');
+      return { text: `The hand is over. ${result}\nResults don't change grades; only the decisions do.\n${history || 'The student made no decisions this hand.'}`, best: null, bestAction: null };
+    }
+    const facts = PT.coach.tutorFacts(engine.coachView(), heroId, locked);
+    if (history) facts.text = `${history}\n\nCurrent spot:\n${facts.text}`;
+    return facts;
+  }
+
   $('#chatForm').addEventListener('submit', e => {
     e.preventDefault();
     const q = $('#chatInput').value.trim();
@@ -539,14 +569,19 @@
     chat.scrollTop = chat.scrollHeight;
 
     const locked = $('#coachMode').value === 'test' && engine.current === heroId && !engine.over;
-    const localAnswer = () => PT.coach.tutorReply(q, engine.coachView(), heroId, locked);
+    const history = decisionHistory();
+    const localAnswer = () => {
+      if (engine.over) return history || 'You made no decisions this hand.';
+      const reply = PT.coach.tutorReply(q, engine.coachView(), heroId, locked);
+      return history && /my play|pre.?flop|flop|turn|earlier|this hand|so far/i.test(q) ? `${history}\n\n${reply}` : reply;
+    };
 
     if (PT.llm.enabled) {
       const thinking = document.createElement('div');
       thinking.className = 'a muted';
       thinking.textContent = `${PT.llm.providerLabel} thinking…`;
       chat.appendChild(thinking);
-      PT.llm.tutorChat(q, PT.coach.tutorFacts(engine.coachView(), heroId, locked), locked, chatHistory)
+      PT.llm.tutorChat(q, tutorContext(locked, history), locked, chatHistory)
         .then(txt => {
           thinking.remove();
           syncLlmStatus();
@@ -656,7 +691,31 @@
     $('#aiTestResult').textContent = '';
     $('#aiTestResult').className = 'muted';
     if (!$('#aiDialog').open) $('#aiDialog').showModal();
+    refreshModels();
   }
+
+  // Suggest the models the provider actually offers, and flag a typed name it doesn't.
+  let modelReq = 0, offeredModels = [];
+  function modelHint() {
+    const id = $('#aiProvider').value, current = $('#aiModel').value.trim();
+    const needsKey = PT.llm.providerSettings(id).needsKey && !$('#aiKey').value.trim();
+    $('#aiModelHint').textContent = !offeredModels.length ? (needsKey ? 'Add your API key to see the available models.' : '')
+      : current && !offeredModels.includes(current) ? `"${current}" isn't offered by this provider. Click the Model box to pick one of ${offeredModels.length}.`
+      : `${offeredModels.length} models available. Click the Model box to choose.`;
+  }
+  async function refreshModels() {
+    const req = ++modelReq;
+    offeredModels = [];
+    $('#aiModelHint').textContent = 'Looking up available models…';
+    const models = await PT.llm.listModels($('#aiProvider').value, { url: $('#aiUrl').value, key: $('#aiKey').value });
+    if (req !== modelReq) return;
+    offeredModels = models;
+    $('#aiModelList').replaceChildren(...models.map(m => Object.assign(document.createElement('option'), { value: m })));
+    modelHint();
+  }
+  $('#aiKey').addEventListener('change', refreshModels);
+  $('#aiUrl').addEventListener('change', refreshModels);
+  $('#aiModel').addEventListener('input', modelHint);
   function saveAiSettings() {
     PT.llm.configure($('#aiProvider').value, { url: $('#aiUrl').value, model: $('#aiModel').value, key: $('#aiKey').value });
     syncLlmStatus();
@@ -679,6 +738,7 @@
       out.className = 'bad';
       out.textContent = err.name === 'AbortError' ? 'Timed out.'
         : err.name === 'TypeError' ? "Can't reach it: check the URL, that the server is running, and that it allows browser (CORS) requests."
+        : / 404: .*model/i.test(err.message) && offeredModels.length ? `This provider has no model called "${$('#aiModel').value.trim()}". Pick one from the Model list.`
         : String(err.message).slice(0, 160);
     }
     syncLlmStatus();

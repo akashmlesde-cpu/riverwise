@@ -73,6 +73,14 @@ function spot() {
   PT.llm.configure('openai', { model: 'some-model', key: 'sk-test' });
   const t = await PT.llm.testProvider('openai').catch(err => ({ err }));
   check('rejected max_tokens is retried with max_completion_tokens', t.reply === 'OK' && bodies.length === 2 && 'max_completion_tokens' in bodies[1], JSON.stringify(t));
+
+  // Model suggestions come from the provider's /models list, using unsaved form values
+  let modelsReq = null;
+  global.fetch = async (url, opts) => { modelsReq = { url, opts }; return { ok: true, json: async () => ({ data: [{ id: 'b-model' }, { id: 'a-model' }] }) }; };
+  const models = await PT.llm.listModels('groq', { key: 'gsk_typed' });
+  check('model list fetched from <base>/models with the typed key', modelsReq.url === 'https://api.groq.com/openai/v1/models' && modelsReq.opts.headers.Authorization === 'Bearer gsk_typed', modelsReq.url);
+  check('model list sorted', JSON.stringify(models) === '["a-model","b-model"]', JSON.stringify(models));
+  check('no model lookup for a cloud provider without a key', (await PT.llm.listModels('openrouter', { key: '' })).length === 0);
   global.fetch = realFetch;
   PT.llm.setProvider('groq'); PT.llm.setOppProvider('groq');
 

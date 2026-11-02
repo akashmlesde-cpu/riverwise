@@ -389,7 +389,8 @@
     if ((isBest || sameAction) && alt && gap < noise && chosen.ev - alt.ev < noise)
       s = `Close decision with ${hole}: ${lowerFirst(actionText(chosen))} (EV ${bb(chosen.ev)} BB) and ${lowerFirst(actionText(alt))} (EV ${bb(alt.ev)} BB) are within the estimate's noise, so either is fine. ${VERB[chosen.action]}: ${reasonFor(chosen, ev)}.`;
     else if (isBest) s = `${actionText(chosen)} is the best option with ${hole}: ${reasonFor(chosen, ev)}.`;
-    else if (sameAction) s = `${VERB[chosen.action]} is the right action with ${hole}; ${bb(chosen.amount)} BB (EV ${bb(chosen.ev)}) vs ${bb(ev.best.amount)} BB (EV ${bb(ev.best.ev)}) is ${gap < noise ? 'a sizing difference within the estimate\'s noise' : 'a real sizing difference'}: ${reasonFor(chosen, ev)}.`;
+    else if (sameAction && gap >= noise) s = `Your size is the problem: ${lowerFirst(actionText(chosen))} (EV ${bb(chosen.ev)} BB) gives up ${bb(gap)} BB compared with ${lowerFirst(actionText(ev.best))} (EV ${bb(ev.best.ev)} BB). ${VERB[chosen.action]} was right with ${hole}, but ${chosen.amount > ev.best.amount ? 'the bigger size risks more than it gains' : 'the smaller size leaves money behind'}: ${reasonFor(ev.best, ev)}.`;
+    else if (sameAction) s = `${VERB[chosen.action]} is the right action with ${hole}; ${bb(chosen.amount)} BB (EV ${bb(chosen.ev)}) vs ${bb(ev.best.amount)} BB (EV ${bb(ev.best.ev)}) is a sizing difference within the estimate's noise: ${reasonFor(chosen, ev)}.`;
     else s = `${actionText(chosen)} (EV ${bb(chosen.ev)} BB) is ${chosen.ev > 0.05 ? 'profitable, but ' : ''}${gap < noise ? 'slightly' : 'clearly'} worse than ${lowerFirst(actionText(ev.best))} (EV ${bb(ev.best.ev)} BB)${gap < noise ? ', within the estimate\'s noise' : ''}: ${reasonFor(ev.best, ev)}.`;
     return s + ' ' + lessonFor(view, chosen, isBest || sameAction);
   }

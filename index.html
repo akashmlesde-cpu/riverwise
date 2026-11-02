@@ -126,7 +126,9 @@
         (LM Studio, Ollama, llama.cpp, vLLM). Keys are stored only in this browser.</p>
       <label class="wide">Provider <select id="aiProvider"></select></label>
       <label class="wide">Base URL <input id="aiUrl" type="url" placeholder="https://…/v1" /></label>
-      <label class="wide">Model <input id="aiModel" type="text" autocomplete="off" /></label>
+      <label class="wide">Model <input id="aiModel" type="text" autocomplete="off" list="aiModelList" /></label>
+      <datalist id="aiModelList"></datalist>
+      <div id="aiModelHint" class="muted"></div>
       <label class="wide">API key <input id="aiKey" type="password" autocomplete="off" /></label>
       <div class="ai-test"><button id="aiTestBtn" type="button">Save &amp; test connection</button> <span id="aiTestResult" class="muted"></span></div>
       <menu>
