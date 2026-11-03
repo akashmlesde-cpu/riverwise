@@ -146,6 +146,7 @@ function spot() {
   check('question about "raising 7.5BB" picks the preflop decision', PT.coach.pickDecision('raising 7.5BB on Q off suit seems like a bad play', decisions, 'turn') === 0);
   check('question about "the flop" picks the flop decision', PT.coach.pickDecision('what about my play on the flop?', decisions, 'turn') === 1);
   check('question about now picks no past decision', PT.coach.pickDecision('should I bet now?', decisions, 'turn') === -1);
+  check('"was 3BB a good choice?" picks the decision where 3 BB was an option', PT.coach.pickDecision('Was 3BB a good choice?', [{ street: 'preflop', action: 'raise', amount: 4, optionAmounts: [3, 4] }, { street: 'flop', action: 'check' }], null) === 0);
   const routed = { text: 'facts 7.5 3 0.9 0.5 8 12 10 10.5', best: null, bestAction: null, mustMention: ['preflop', '7.5'] };
   check('tutor answer about the wrong decision is rejected', !PT.llm.validateTutor('Betting to 12 BB has an EV of 10.5 BB, better than 8 BB.', routed, false, 'raising 7.5BB seems bad'));
   check('tutor answer naming the asked decision is accepted', PT.llm.validateTutor('Your pre-flop raise to 7.5 BB was too big: 3 BB earns 0.9 BB versus 0.5 BB.', routed, false, 'raising 7.5BB seems bad'));

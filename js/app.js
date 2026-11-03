@@ -10,6 +10,7 @@
   let pendingSizeAction = null;   // 'bet' | 'raise' while size chooser open
   let lastVerdict = null;         // most recent verdict (tutor may discuss it)
   let handDecisions = [];         // this hand's graded decisions, for the tutor's hand review
+  let tutorDecision = -1;         // decision the tutor conversation is about, so follow-ups stay on it
   let heroFlags = null;           // per-hand stat flags
   let guessMode = localStorage.getItem('riverwise.guessMode') === '1';
   let guessRevealed = false, lastGuess = null;
@@ -76,6 +77,7 @@
     heroFlags = { voluntaryPreflop: null, raisedPreflop: false, faced3bet: false, pfa: false, facingBet: false, cbetOpportunity: false, cbetChecked: false };
     lastVerdict = null;
     handDecisions = [];
+    tutorDecision = -1;
     stats.hands++;
     stats.vpipD++; stats.pfrD++;
   }
@@ -187,7 +189,11 @@
     const verdict = PT.coach.grade(viewBefore, heroId, action, betTo, $('#depth').value);
     verdict._ev = verdict.ev;
     lastVerdict = verdict;
-    handDecisions.push(decisionLine(verdict, viewBefore));
+    handDecisions.push(Object.assign(decisionLine(verdict, viewBefore), {
+      verdict,
+      analysis: PT.coach.tutorFacts(viewBefore, heroId, false).text,
+      optionAmounts: verdict.ev.actions.map(a => a.amount).filter(x => x != null)
+    }));
     const aiNote = PT.llm.enabled && $('#depth').value !== 'None';
     stats.recordDecision(verdict, engine.handNo, viewBefore.street);
     showVerdict(verdict, viewBefore, aiNote);
@@ -244,6 +250,7 @@
     const box = card && card.isConnected && card.querySelector('.plain.pending');
     if (!box) return;
     box.classList.remove('pending', 'muted');
+    verdict.shownText = text || verdict.plain;
     if (text) { box.textContent = text; return; }
     console.info('AI coach note not used:', problem);
     box.innerHTML = `${verdict.plain}<div class="muted">(built-in note)</div>`;
@@ -557,17 +564,28 @@
   }
 
   // After the hand: review its decisions. During it: earlier decisions plus the live spot.
+  // Tutor facts. A question about an earlier decision (or any question after the hand) gets that
+  // decision's full analysis and the exact text its Analysis card showed, so the two never disagree.
   function tutorContext(locked, history, q) {
-    const target = PT.coach.pickDecision(q, handDecisions, engine.over ? null : engine.street);
-    const focus = target < 0 ? '' : `The student is asking about decision ${target + 1} (${handDecisions[target].street}): answer about THAT decision using its line and options, not the current spot. Start by naming it, e.g. "Your ${handDecisions[target].street} ${handDecisions[target].action}…".\n`;
-    const mustMention = target < 0 ? null : [handDecisions[target].street, handDecisions[target].amount != null ? String(+handDecisions[target].amount.toFixed(1)) : null].filter(Boolean);
+    const asked = PT.coach.pickDecision(q, handDecisions, engine.over ? null : engine.street);
+    if (asked >= 0) tutorDecision = asked;
+    const idx = asked >= 0 ? asked : tutorDecision >= 0 ? tutorDecision : engine.over ? handDecisions.length - 1 : -1;
+    const d = handDecisions[idx];
+    const focus = !d ? '' :
+      (asked >= 0 ? `The student is asking about decision ${idx + 1} (${d.street}): answer about that decision, not the current spot, and name it.`
+        : `Unless the student names another decision, discuss decision ${idx + 1} (${d.street}).`) +
+      `\nFull engine analysis of decision ${idx + 1}, the same numbers its Analysis card used:\n` +
+      `Analysis card said: ${d.verdict.label}. ${d.verdict.shownText || d.verdict.plain}\n${d.analysis}\n\n`;
+    let facts;
     if (engine.over) {
       const result = engine.history.filter(h => / (wins|shows) /.test(h.text)).map(h => youText(h.text)).join(' ');
-      return { text: `${focus}The hand is over. ${result}\nResults don't change grades; only the decisions do.\n${history || 'The student made no decisions this hand.'}`, best: null, bestAction: null, mustMention };
+      facts = { text: `${focus}The hand is over. ${result}\nResults don't change grades; only the decisions do.\n${history || 'The student made no decisions this hand.'}`, best: null, bestAction: null };
+    } else {
+      facts = PT.coach.tutorFacts(engine.coachView(), heroId, locked);
+      if (d) { facts.text = `${focus}${history}\n\nCurrent spot (only if the question is about it):\n${facts.text}`; facts.best = null; facts.bestAction = null; }
+      else if (history) facts.text = `${history}\n\nCurrent spot:\n${facts.text}`;
     }
-    const facts = PT.coach.tutorFacts(engine.coachView(), heroId, locked);
-    if (history) facts.text = `${focus}${history}\n\nCurrent spot (only if the question is about it):\n${facts.text}`;
-    if (target >= 0) { facts.best = null; facts.bestAction = null; facts.mustMention = mustMention; }
+    if (asked >= 0) facts.mustMention = [d.street, d.amount != null ? String(+d.amount.toFixed(1)) : null].filter(Boolean);
     return facts;
   }
 

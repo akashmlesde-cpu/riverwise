@@ -566,6 +566,9 @@
     const amounts = [...q.matchAll(/(\d+(?:\.\d+)?)\s*(?:bb|big blinds?)?/g)].map(m => +m[1]);
     for (let i = decisions.length - 1; i >= 0; i--)
       if (decisions[i].amount != null && amounts.some(a => Math.abs(a - decisions[i].amount) < 0.05)) return i;
+    // "Was 3 BB better?" names a size the student could have chosen.
+    for (let i = decisions.length - 1; i >= 0; i--)
+      if ((decisions[i].optionAmounts || []).some(x => amounts.some(a => Math.abs(a - x) < 0.05))) return i;
     const street = ['preflop', 'river', 'turn', 'flop'].find(s => new RegExp(`\\b${s}\\b`).test(q));
     if (!street || street === currentStreet) return -1;
     for (let i = decisions.length - 1; i >= 0; i--) if (decisions[i].street === street) return i;
